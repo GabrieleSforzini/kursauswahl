@@ -1,44 +1,69 @@
 var express = require('express');
 var router = express.Router();
-var {restrict, validate, sessionUser} = require("../src/auth");
-var db = require("../src/db");
+var {restrict, createSession, sessionUser, endSession, tokens} = require("../src/auth");
 
 router.get("/", (req, res, next) => {
     res.redirect("/login");
 })
 
-router.get('/login', function(req, res, next) {
-    res.render('login', { title: 'Kursauswahl: Login' });
-});
-
-router.post("/login", (req, res, next) => {
-    var username = req.body.uname;
-    var pwd = req.body.pwd;
-    let sid = validate(username, pwd);
-    if (sid == undefined) {
-        // Return error page
-        res.send("Wrong credentials");
-    }
-    else {
-        console.log(username, " logging in with ", pwd);
-        res.cookie("secret", sid, {maxAge: 43200000, sameSite: "strict", httpOnly: "true"});
+router.get('/login', (req, res, next) => {
+    let user = sessionUser(req);
+    res.clearCookie("lwrong", {sameSite: "strict"});
+    if (user !== undefined) {
         res.redirect("/dashboard");
     }
+    else {
+        res.render('login', { title: 'Kursauswahl: Login', cwrong: ("lwrong" in req.cookies)});
+    }
 });
 
-router.get('/make_selection', restrict("user"), function(req, res, next) {
-    var selectables = [{name: "Deutsch", id: "DE", h: "4"}, {name: "Italienisch", id: "IT", h: 4}];
-    res.render('selection', { title: 'Kursauswahl: Auswahl', selectables});
+router.post("/login", async (req, res, next) => { try {
+    var username = req.body.uname;
+    var pwd = req.body.pwd;
+    var sid = await createSession(username, pwd);
+    if (sid == undefined) {
+        // Return error page
+        res.cookie("lwrong", "true", {maxAge: 1000*10, sameSite: "strict"});
+        res.redirect("/login");
+    }
+    else {
+        console.log("User %s logged in", username);
+        res.cookie("secret", sid, {maxAge: 43200000, sameSite: "strict", httpOnly: "true", secure: true});
+        res.redirect("/dashboard");
+    }
+    } catch (error) {next(error)}
 });
 
-router.get('/students', restrict("admin"), async function(req, res, next) {
+router.get("/logout", restrict("user"), (req, res, next) => {
+    endSession(req);
+    res.clearCookie("secret");
+    res.redirect("/login");
+});
+
+router.get('/make_selection', restrict("user"), (req, res, next) => {
+    var token = tokens.create(sessionUser(req).csrf_secret);
+    res.render('selection', { title: 'Kursauswahl: Auswahl', csrf_token: token});
+});
+
+router.post("/make_selection", restrict("user", true), (req, res, next) => {
+    res.send("Unimplemented");
+    res.status(501);
+});
+
+/*router.get('/students', restrict("admin"), async function(req, res, next) { try {
     let users = (await db.query("SELECT username FROM userdata")).rows.map((val) => val["username"]);
     res.render('students', { title: 'Kursauswahl: User' , users});
-});
+    } catch (error) {next(error)}
+});*/
 
-router.get("/dashboard", restrict("user"), async function(req, res, next) {
+router.get("/dashboard", restrict("user"), async function(req, res, next) { try {
     let user = sessionUser(req);
-    res.render("dashboard", { title: "Dashboard" , show_admin: user[2]});
+    res.render("dashboard", { title: "Dashboard" , show_admin: user.isadmin});
+    } catch (error) {next(error)}
 })
+
+router.get("/admin", restrict("admin"), (req, res, next) => {
+    res.render("admin", { title: "Kursauswahl: Admin panel"});
+});
 
 module.exports = router;

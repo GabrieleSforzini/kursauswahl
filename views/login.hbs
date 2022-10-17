@@ -1,6 +1,10 @@
 {{!-- Login Seite --}}
-<h1>Login:</h1>
 <form action="/login" style="padding: 50px" method="post" autocomplete="username">
+  {{#if cwrong}}
+  <div class="alert alert-danger" role="alert">
+  Wrong username or password
+  </div>
+  {{/if}}
   <div class="form-group">
     <label for="uname_input">Username</label>
     <input type="text" class="form-control" id="uname_input" name="uname" placeholder="Enter Username">
